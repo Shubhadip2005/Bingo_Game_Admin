@@ -4,6 +4,7 @@ import type { RoomData } from "../types";
 import { closeRooms, subscribeAllRooms } from "./adminActions";
 import { timeAgo } from "../lib/format";
 import AdminRoom from "./AdminRoom";
+import SampleRoom from "./SampleRoom";
 
 type Tab = "live" | "waiting" | "finished" | "all";
 
@@ -36,6 +37,7 @@ export default function AdminDashboard({ user, onSignOut }: Props) {
   const [tab, setTab] = useState<Tab>("live");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [sample, setSample] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => subscribeAllRooms(setRooms, setError), []);
@@ -86,6 +88,9 @@ export default function AdminDashboard({ user, onSignOut }: Props) {
   if (selected && selectedRoom) {
     return <AdminRoom room={selectedRoom} roomId={selected} onBack={() => setSelected(null)} />;
   }
+  if (sample) {
+    return <SampleRoom onBack={() => setSample(false)} />;
+  }
 
   return (
     <main className="page wide">
@@ -94,9 +99,14 @@ export default function AdminDashboard({ user, onSignOut }: Props) {
           <h1 className="logo small">Admin</h1>
           <p className="tagline">Signed in as {user.email}</p>
         </div>
-        <button className="btn ghost" onClick={onSignOut}>
-          Sign out
-        </button>
+        <div className="admin-top-actions">
+          <button className="btn ghost" onClick={() => setSample(true)}>
+            Sample room (demo)
+          </button>
+          <button className="btn ghost" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       </div>
 
       {error && <p className="error on-blue">{error}</p>}

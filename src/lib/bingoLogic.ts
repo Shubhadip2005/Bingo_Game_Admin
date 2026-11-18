@@ -1,0 +1,147 @@
+/**
+ * Pure board logic: lines, validation, helpers for filling a board.
+ * No Firebase and no React in here, so it is easy to test.
+ */
+
+export const MIN_GRID = 5;
+export const MAX_GRID = 25;
+
+/** Firebase turns integer-keyed objects into arrays, so keys are prefixed with "n". */
+export const callKey = (num: number): string => `n${num}`;
+
+export function isCalled(called: Record<string, number>, num: number): boolean {
+  return typeof called[callKey(num)] === "number";
+}
+
+/** Every line on an n x n board as lists of cell indexes (row-major). */
+export function lineGroups(n: number, diagonals: boolean): number[][] {
+  const groups: number[][] = [];
+  for (let r = 0; r < n; r++) groups.push(Array.from({ length: n }, (_, c) => r * n + c));
+  for (let c = 0; c < n; c++) groups.push(Array.from({ length: n }, (_, r) => r * n + c));
+  if (diagonals) {
+    groups.push(Array.from({ length: n }, (_, i) => i * n + i));
+    groups.push(Array.from({ length: n }, (_, i) => i * n + (n - 1 - i)));
+  }
+  return groups;
+}
+
+export function completedLines(
+  cells: number[],
+  called: Record<string, number>,
+  n: number,
+  diagonals: boolean
+): number[][] {
+  return lineGroups(n, diagonals).filter((group) => group.every((i) => isCalled(called, cells[i])));
+}
+
+export function countLines(
+  cells: number[],
+  called: Record<string, number>,
+  n: number,
+  diagonals: boolean
+): number {
+  return completedLines(cells, called, n, diagonals).length;
+}
+
+/** Cell indexes that belong to at least one completed line (used for highlighting). */
+export function litCells(
+  cells: number[],
+  called: Record<string, number>,
+  n: number,
+  diagonals: boolean
+): Set<number> {
+  const lit = new Set<number>();
+  for (const group of completedLines(cells, called, n, diagonals)) group.forEach((i) => lit.add(i));
+  return lit;
+}
+
+export type LineKey = "short" | "quick" | "standard" | "long";
+
+/**
+ * "Lines to win" choices for a grid size. Standard = n lines (5 lines on 5x5 = B-I-N-G-O).
+ * "Short" only appears on bigger boards, where it keeps games from dragging on.
+ */
+export function linesToWinOptions(n: number): { key: LineKey; label: string; value: number }[] {
+  const quick = n - 2;
+  const short = Math.max(3, Math.ceil(n / 2));
+  const options: { key: LineKey; label: string; value: number }[] = [];
+  if (short < quick) options.push({ key: "short", label: "Short", value: short });
+  options.push({ key: "quick", label: "Quick", value: quick });
+  options.push({ key: "standard", label: "Standard", value: n });
+  options.push({ key: "long", label: "Long", value: n + 2 });
+  return options;
+}
+
+// ---------- board setup helpers ----------
+
+export type Draft = (number | null)[];
+
+export function isCompleteBoard(draft: Draft, n: number): draft is number[] {
+  if (draft.length !== n * n) return false;
+  const seen = new Set<number>();
+  for (const v of draft) {
+    if (v === null || !Number.isInteger(v) || v < 1 || v > n * n || seen.has(v)) return false;
+    seen.add(v);
+  }
+  return true;
+}
+
+export function unusedNumbers(draft: Draft, n: number): number[] {
+  const used = new Set(draft.filter((v): v is number => v !== null));
+  const free: number[] = [];
+  for (let k = 1; k <= n * n; k++) if (!used.has(k)) free.push(k);
+  return free;
+}
+
+/** Smallest number not on the board yet: 1 for the first click, 2 for the next, and so on. */
+export function nextFreeNumber(draft: Draft, n: number): number | null {
+  return unusedNumbers(draft, n)[0] ?? null;
+}
+
+export type EntryResult = { ok: true; value: number } | { ok: false; error: string };
+
+/** Check a number typed into box `index`: whole number, in range, and unique. */
+export function validateEntry(draft: Draft, index: number, raw: string, n: number): EntryResult {
+  const text = raw.trim();
+  if (!/^\d+$/.test(text)) return { ok: false, error: "Type a whole number." };
+  const value = Number(text);
+  if (value < 1 || value > n * n) return { ok: false, error: `Use a number from 1 to ${n * n}.` };
+  if (draft.some((v, i) => i !== index && v === value)) {
+    return { ok: false, error: `${value} is already in another box. Every number must be unique.` };
+  }
+  return { ok: true, value };
+}
+
+export function shuffled<T>(items: T[], rand: () => number = Math.random): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Fill every empty box with the unused numbers in random order. */
+export function randomFill(draft: Draft, n: number, rand: () => number = Math.random): Draft {
+  const pool = shuffled(unusedNumbers(draft, n), rand);
+  return draft.map((v) => (v === null ? (pool.pop() as number) : v));
+}
+
+/** Swap the numbers in two boxes. Returns a new array, or null if the request makes no sense. */
+export function swapCells(cells: number[], i: number, j: number): number[] | null {
+  if (i === j || i < 0 || j < 0 || i >= cells.length || j >= cells.length) return null;
+  const next = [...cells];
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+}
+
+/** Fill every empty box with the unused numbers in order: 1, 2, 3 ... */
+export function sequentialFill(draft: Draft, n: number): Draft {
+  const pool = unusedNumbers(draft, n);
+  let next = 0;
+  return draft.map((v) => (v === null ? pool[next++] : v));
+}
+
+export function emptyDraft(n: number): Draft {
+  return Array.from({ length: n * n }, () => null);
+}
